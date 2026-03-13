@@ -17,4 +17,3 @@ python-multipart==0.0.9
 structlog==24.1.0
 pytest==8.2.0
 pytest-asyncio==0.23.6
-geoalchemy2==0.14.3
