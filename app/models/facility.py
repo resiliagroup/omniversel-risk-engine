@@ -50,7 +50,7 @@ class Facility(Base, TimestampMixin):
     employee_count: Mapped[int] = mapped_column(Integer, nullable=True)
     operates_24h: Mapped[bool] = mapped_column(Boolean, default=False)
     asset_value_usd: Mapped[float] = mapped_column(Float, nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSONB, default={})
+    extra_data: Mapped[dict] = mapped_column(JSONB, default={})
 
     tenant: Mapped["Tenant"] = relationship(back_populates="facilities")
     assessments: Mapped[list["RiskAssessment"]] = relationship(back_populates="facility")
