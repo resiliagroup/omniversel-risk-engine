@@ -1,3 +1,4 @@
+from geoalchemy2 import Geometry
 from sqlalchemy import String, Float, Integer, Boolean, ForeignKey, Text, SmallInteger, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
