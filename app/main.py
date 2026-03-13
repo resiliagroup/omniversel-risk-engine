@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.base import engine, Base
+from sqlalchemy import text
 import structlog
 
 logger = structlog.get_logger()
@@ -14,6 +15,7 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     logger.info("omni.startup", version=settings.APP_VERSION, env=settings.ENV)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
