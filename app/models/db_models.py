@@ -77,7 +77,7 @@ class Facility(Base):
 
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
-    metadata_       = Column("metadata", JSONB, default={})
+    extra_data = Column("extra_data", JSONB, default={})
 
     tenant          = relationship("Tenant", back_populates="facilities")
     assessments     = relationship("RiskAssessment", back_populates="facility")

@@ -71,7 +71,7 @@ class HazardScore(Base):
     weighted_score: Mapped[float] = mapped_column(Float)
     data_source: Mapped[str] = mapped_column(String(100), nullable=True)
     captured_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    metadata: Mapped[dict] = mapped_column(JSONB, default={})
+    extra_data: Mapped[dict] = mapped_column(JSONB, default={})
 
     assessment: Mapped["RiskAssessment"] = relationship(back_populates="hazard_scores")
 
