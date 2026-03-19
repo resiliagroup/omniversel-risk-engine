@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from typing import Optional
 
@@ -27,8 +28,12 @@ async def create_assessment(
     Run full HFER-720 pipeline for a facility.
     Returns URI score, dimension scores, radar data and recommendations.
     """
-    # Fetch facility with location data
-    stmt = select(Facility).where(Facility.id == request.facility_id)
+    # Fetch facility with location data (eager load to avoid lazy greenlet error)
+    stmt = (
+        select(Facility)
+        .where(Facility.id == request.facility_id)
+        .options(selectinload(Facility.location_data))
+    )
     result = await db.execute(stmt)
     facility = result.scalar_one_or_none()
 
