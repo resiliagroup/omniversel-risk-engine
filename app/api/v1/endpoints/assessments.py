@@ -37,9 +37,13 @@ async def create_assessment(
     if not facility.is_active:
         raise HTTPException(status_code=400, detail="Facility is inactive")
 
-    assessment, recommendations = await pipeline.run(
-        db=db, facility=facility, request=request
-    )
+    try:
+        assessment, recommendations = await pipeline.run(
+            db=db, facility=facility, request=request
+        )
+    except Exception as exc:
+        logger.error("pipeline.error", error=str(exc), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Pipeline error: {type(exc).__name__}: {exc}")
 
     return _build_response(assessment, recommendations)
 
