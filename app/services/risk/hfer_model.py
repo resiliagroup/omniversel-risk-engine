@@ -135,6 +135,46 @@ class HFER720Result:
     ml_weight_used: Optional[float] = None
 
 # ─────────────────────────────────────────────────────────────
+# HRO / TOC helpers (no external deps)
+# ─────────────────────────────────────────────────────────────
+
+_K_MATRIX: dict[str, dict[str, float]] = {
+    "HOSPITAL":     {"deprem": 2.8, "sel": 2.1, "natech": 3.5, "siber": 4.2},
+    "INDUSTRIAL":   {"deprem": 3.2, "sel": 2.8, "natech": 4.8, "siber": 1.9},
+    "BANK":         {"deprem": 1.8, "sel": 1.5, "natech": 2.0, "siber": 5.1},
+    "MUNICIPALITY": {"deprem": 3.0, "sel": 2.5, "natech": 3.2, "siber": 3.8},
+    "EDUCATION":    {"deprem": 2.5, "sel": 2.0, "natech": 1.8, "siber": 2.2},
+    "HOTEL":        {"deprem": 2.2, "sel": 3.0, "natech": 2.5, "siber": 2.8},
+    "UNIVERSITY":   {"deprem": 2.5, "sel": 2.0, "natech": 1.8, "siber": 2.2},
+    "INFRASTRUCTURE":{"deprem": 3.5,"sel": 3.0, "natech": 4.0, "siber": 3.0},
+}
+
+_SECTOR_ALIAS: dict[str, str] = {
+    "hospital": "HOSPITAL", "saglik": "HOSPITAL",
+    "industrial": "INDUSTRIAL", "sanayi": "INDUSTRIAL",
+    "bank": "BANK", "bankacilik": "BANK",
+    "municipality": "MUNICIPALITY", "belediye": "MUNICIPALITY",
+    "education": "EDUCATION", "egitim": "EDUCATION",
+    "hotel": "HOTEL", "konaklama": "HOTEL",
+    "university": "UNIVERSITY",
+    "infrastructure": "INFRASTRUCTURE",
+}
+
+
+def _compute_hro_alpha(near_miss_count: int, tatbikat_var: bool, otonom_squad: bool) -> float:
+    alpha = 0.8
+    if near_miss_count > 0: alpha = max(alpha, 1.2)
+    if tatbikat_var:        alpha = max(alpha, 1.1)
+    if otonom_squad:        alpha = max(alpha, 1.3)
+    return round(alpha, 2)
+
+
+def _get_k_value(sector: str, hazard: str) -> float:
+    key = _SECTOR_ALIAS.get(sector.lower(), sector.upper())
+    return _K_MATRIX.get(key, {}).get(hazard.lower(), 1.0)
+
+
+# ─────────────────────────────────────────────────────────────
 # HFER-720 Model
 # ─────────────────────────────────────────────────────────────
 
@@ -328,19 +368,15 @@ class HFER720Model:
         primary_hazard: str = "deprem",
     ) -> HFER720Result:
         """Full HFER-720 pipeline with HRO_α × TOC bottleneck formula."""
-        from app.services.risk.hfer720 import (
-            compute_hro_alpha, get_k_value, DEFAULT_K_MATRIX
-        )
-
         h, h_sub = self.compute_hazard(hazard)
         f, f_sub = self.compute_fragility(fragility)
         e, e_sub = self.compute_exposure(exposure)
         r, r_sub = self.compute_response(response)
 
         # ── HRO alpha & k(s,t) ──────────────────────────────
-        hro_alpha = compute_hro_alpha(near_miss_count, tatbikat_var, otonom_squad)
+        hro_alpha = _compute_hro_alpha(near_miss_count, tatbikat_var, otonom_squad)
         sector_str = sector.value if hasattr(sector, 'value') else str(sector)
-        k_val = get_k_value(sector_str, primary_hazard)
+        k_val = _get_k_value(sector_str, primary_hazard)
         b_n = min(max(float(bottleneck_score), 1.0), 3.0)
 
         # URI = (H×F×E×B) / (1 + k(s,t)×C²) × HRO_α  → rescaled 0-100
