@@ -208,7 +208,7 @@ class RiskScoringPipeline:
             ml_weight_used=ml_weight,
             assessment_type=AssessmentType.HYBRID if ml_score else AssessmentType.FORM,
             assessor_id=assessor_id,
-            raw_inputs=request.model_dump(),
+            raw_inputs=request.model_dump(mode='json'),
             bottleneck_score=result.bottleneck_score,
             hro_alpha=result.hro_alpha,
             near_miss_count=getattr(request, 'near_miss_count', 0),
