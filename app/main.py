@@ -17,6 +17,16 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
+        # Idempotent column migrations (IF NOT EXISTS — safe to re-run)
+        migrations = [
+            "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS bottleneck_score FLOAT",
+            "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS hro_alpha FLOAT",
+            "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS near_miss_count INTEGER",
+            "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS k_matrix JSONB",
+        ]
+        for sql in migrations:
+            await conn.execute(text(sql))
+        logger.info("omni.migrations_applied")
     yield
     await engine.dispose()
     logger.info("omni.shutdown")

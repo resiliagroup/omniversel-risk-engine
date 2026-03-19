@@ -130,6 +130,9 @@ class HFER720Result:
     weights_used: dict[str, float]
     radar_data: dict[str, float]   # for frontend radar chart
     confidence: float = 0.85       # classical model is deterministic → high base confidence
+    hro_alpha: float = 0.8         # HRO olgunluk katsayısı
+    bottleneck_score: float = 1.0  # TOC darboğaz çarpanı
+    ml_weight_used: Optional[float] = None
 
 # ─────────────────────────────────────────────────────────────
 # HFER-720 Model
@@ -318,15 +321,34 @@ class HFER720Model:
         response: ResponseCapacityInput,
         ml_score: Optional[float] = None,
         ml_weight: float = 0.6,
+        bottleneck_score: float = 1.0,
+        near_miss_count: int = 0,
+        tatbikat_var: bool = False,
+        otonom_squad: bool = False,
+        primary_hazard: str = "deprem",
     ) -> HFER720Result:
-        """Full HFER-720 pipeline. Returns complete result."""
+        """Full HFER-720 pipeline with HRO_α × TOC bottleneck formula."""
+        from app.services.risk.hfer720 import (
+            compute_hro_alpha, get_k_value, DEFAULT_K_MATRIX
+        )
 
         h, h_sub = self.compute_hazard(hazard)
         f, f_sub = self.compute_fragility(fragility)
         e, e_sub = self.compute_exposure(exposure)
         r, r_sub = self.compute_response(response)
 
-        classical_uri = self.compute_uri(sector, h, f, e, r)
+        # ── HRO alpha & k(s,t) ──────────────────────────────
+        hro_alpha = compute_hro_alpha(near_miss_count, tatbikat_var, otonom_squad)
+        sector_str = sector.value if hasattr(sector, 'value') else str(sector)
+        k_val = get_k_value(sector_str, primary_hazard)
+        b_n = min(max(float(bottleneck_score), 1.0), 3.0)
+
+        # URI = (H×F×E×B) / (1 + k(s,t)×C²) × HRO_α  → rescaled 0-100
+        h_n, f_n, e_n = h / 100.0, f / 100.0, e / 100.0
+        c_deficit = 1.0 - (r / 100.0)
+        raw_product = h_n * f_n * e_n * b_n
+        adjusted_risk = raw_product / (1.0 + k_val * (c_deficit ** 2)) / hro_alpha
+        classical_uri = round(min(max(100.0 * (1.0 - min(adjusted_risk / 4.0, 1.0)), 0), 100), 2)
 
         # Ensemble: blend classical + ML if ML score available
         if ml_score is not None:
@@ -363,6 +385,8 @@ class HFER720Model:
             radar_data=radar_data,
             confidence=confidence,
             ml_weight_used=ml_weight if ml_score else None,
+            hro_alpha=hro_alpha,
+            bottleneck_score=b_n,
         )
 
 # Singleton

@@ -74,6 +74,11 @@ class RiskScoringPipeline:
             response=response_inp,
             ml_score=ml_score,
             ml_weight=ml_weight,
+            bottleneck_score=getattr(request, 'bottleneck_score', 1.0),
+            near_miss_count=getattr(request, 'near_miss_count', 0),
+            tatbikat_var=getattr(request, 'tatbikat_var', False),
+            otonom_squad=getattr(request, 'otonom_squad', False),
+            primary_hazard=getattr(request, 'primary_hazard', 'deprem'),
         )
 
         # 5. Recommendations
@@ -204,6 +209,9 @@ class RiskScoringPipeline:
             assessment_type=AssessmentType.HYBRID if ml_score else AssessmentType.FORM,
             assessor_id=assessor_id,
             raw_inputs=request.model_dump(),
+            bottleneck_score=result.bottleneck_score,
+            hro_alpha=result.hro_alpha,
+            near_miss_count=getattr(request, 'near_miss_count', 0),
         )
         db.add(assessment)
         await db.flush()

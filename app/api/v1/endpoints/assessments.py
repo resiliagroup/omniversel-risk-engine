@@ -203,4 +203,6 @@ def _build_response(assessment: RiskAssessment, recommendations) -> AssessmentRe
         dimension_scores=dim, radar_data=radar,
         recommendations=recs_out, classical_score=assessment.classical_score or 0,
         ml_score=assessment.ml_score, assessed_at=assessment.assessed_at,
+        hro_alpha=assessment.hro_alpha or 0.8,
+        bottleneck_score=assessment.bottleneck_score or 1.0,
     )
