@@ -68,6 +68,11 @@ class RiskAssessmentService:
             fragility=request.fragility,
             exposure=request.exposure,
             response=request.response,
+            bottleneck_score=getattr(request, 'bottleneck_score', 1.0),
+            near_miss_count=getattr(request, 'near_miss_count', 0),
+            tatbikat_var=getattr(request, 'tatbikat_var', False),
+            otonom_squad=getattr(request, 'otonom_squad', False),
+            primary_hazard=getattr(request, 'primary_hazard', 'deprem'),
         )
 
         # 3. Ensemble (classical + ML)
@@ -185,6 +190,9 @@ class RiskAssessmentService:
             valid_until=valid_until,
             raw_inputs=request.model_dump(),
             score_breakdown=classical_result.score_breakdown,
+            bottleneck_score=classical_result.bottleneck_score,
+            hro_alpha=classical_result.hro_alpha,
+            near_miss_count=getattr(request, 'near_miss_count', 0),
         )
         db.add(assessment)
         await db.flush()   # get assessment.id

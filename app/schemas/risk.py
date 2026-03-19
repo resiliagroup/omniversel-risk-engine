@@ -65,6 +65,12 @@ class AssessmentCreateRequest(BaseModel):
     exposure: ExposureInputSchema = ExposureInputSchema()
     response: ResponseCapacityInputSchema = ResponseCapacityInputSchema()
     notes: Optional[str] = None
+    # TOC / HRO parametreleri
+    bottleneck_score: float = Field(1.0, ge=1.0, le=3.0, description="TOC darboğaz çarpanı (1.0-3.0)")
+    near_miss_count: int = Field(0, ge=0, description="Son 12 ay ramak kala sayısı")
+    tatbikat_var: bool = Field(False, description="Son 12 ayda tatbikat yapıldı mı?")
+    otonom_squad: bool = Field(False, description="Saha ekibi otonom karar alabiliyor mu?")
+    primary_hazard: str = Field("deprem", description="Baskın tehlike türü (k-matrix için)")
 
 # ── Output schemas ───────────────────────────────────────────
 
@@ -98,6 +104,8 @@ class AssessmentResponse(BaseModel):
     classical_score: float
     ml_score: Optional[float]
     assessed_at: datetime
+    hro_alpha: float = 0.8
+    bottleneck_score: float = 1.0
 
     model_config = {"from_attributes": True}
 
