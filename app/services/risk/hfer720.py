@@ -80,9 +80,25 @@ def compute_hro_alpha(
     return round(alpha, 2)
 
 
+def _load_k_matrix() -> dict:
+    """Override dosyası varsa onu yükle, yoksa DEFAULT_K_MATRIX döndür."""
+    import json, os
+    _K_OVERRIDE = "/tmp/k_matrix_override.json"
+    if os.path.exists(_K_OVERRIDE):
+        try:
+            with open(_K_OVERRIDE) as f:
+                data = json.load(f)
+            return data.get("sector_matrix", DEFAULT_K_MATRIX)
+        except Exception:
+            pass
+    return DEFAULT_K_MATRIX
+
+
 def get_k_value(sector: str, hazard: str, k_matrix: dict | None = None) -> float:
-    """k(s,t): sektör-tehlike katsayısını döner; yoksa 1.0 varsayılan."""
-    matrix = k_matrix or DEFAULT_K_MATRIX
+    """k(s,t): sektör-tehlike katsayısını döner.
+    Öncelik sırası: çağıran tarafından verilen k_matrix → /tmp override → DEFAULT_K_MATRIX.
+    """
+    matrix = k_matrix or _load_k_matrix()
     k_key = _SECTOR_TO_K_KEY.get(sector.lower(), sector.upper())
     row = matrix.get(k_key, {})
     return row.get(hazard.lower(), 1.0)
