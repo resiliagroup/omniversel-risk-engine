@@ -45,6 +45,12 @@ class RiskAssessment(Base, TimestampMixin):
     risk_class: Mapped[RiskClass] = mapped_column(SAEnum(RiskClass), nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=True)  # 0-1
 
+    # TOC / HRO modifiers
+    bottleneck_score: Mapped[float] = mapped_column(Float, nullable=True)  # 1.0-3.0 TOC darboğaz çarpanı
+    hro_alpha: Mapped[float] = mapped_column(Float, nullable=True)          # 0.5-1.5 HRO olgunluk katsayısı
+    near_miss_count: Mapped[int] = mapped_column(Integer, nullable=True)    # son 12 ay ramak kala sayısı
+    k_matrix: Mapped[dict] = mapped_column(JSONB, nullable=True)            # sektör × tehlike katsayı matrisi
+
     # Ensemble details
     classical_score: Mapped[float] = mapped_column(Float, nullable=True)
     ml_score: Mapped[float] = mapped_column(Float, nullable=True)

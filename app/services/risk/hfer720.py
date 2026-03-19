@@ -28,6 +28,67 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────
+# K-MATRIX: sektör × tehlike katsayı matrisi
+# ─────────────────────────────────────────────
+
+DEFAULT_K_MATRIX: dict[str, dict[str, float]] = {
+    "HOSPITAL":     {"deprem": 2.8, "sel": 2.1, "natech": 3.5, "siber": 4.2},
+    "INDUSTRIAL":   {"deprem": 3.2, "sel": 2.8, "natech": 4.8, "siber": 1.9},
+    "BANK":         {"deprem": 1.8, "sel": 1.5, "natech": 2.0, "siber": 5.1},
+    "MUNICIPALITY": {"deprem": 3.0, "sel": 2.5, "natech": 3.2, "siber": 3.8},
+    "EDUCATION":    {"deprem": 2.5, "sel": 2.0, "natech": 1.8, "siber": 2.2},
+    "HOTEL":        {"deprem": 2.2, "sel": 3.0, "natech": 2.5, "siber": 2.8},
+}
+
+# Sektör adı → k-matrix anahtarı eşlemesi
+_SECTOR_TO_K_KEY: dict[str, str] = {
+    "hospital":     "HOSPITAL",
+    "saglik":       "HOSPITAL",
+    "industrial":   "INDUSTRIAL",
+    "sanayi":       "INDUSTRIAL",
+    "bank":         "BANK",
+    "bankacilik":   "BANK",
+    "municipality": "MUNICIPALITY",
+    "belediye":     "MUNICIPALITY",
+    "education":    "EDUCATION",
+    "egitim":       "EDUCATION",
+    "hotel":        "HOTEL",
+    "konaklama":    "HOTEL",
+}
+
+
+def compute_hro_alpha(
+    near_miss_count: int = 0,
+    tatbikat_var: bool = False,
+    otonom_squad: bool = False,
+) -> float:
+    """
+    HRO olgunluk katsayısı (α):
+      near_miss_count > 0  → 1.2  (raporlama kültürü aktif)
+      tatbikat_var         → 1.1  (proaktif hazırlık)
+      otonom_squad         → 1.3  (merkeziyetsiz karar alma)
+      varsayılan           → 0.8
+    Birden fazla koşul varsa en yüksek değer alınır.
+    """
+    alpha = 0.8
+    if near_miss_count > 0:
+        alpha = max(alpha, 1.2)
+    if tatbikat_var:
+        alpha = max(alpha, 1.1)
+    if otonom_squad:
+        alpha = max(alpha, 1.3)
+    return round(alpha, 2)
+
+
+def get_k_value(sector: str, hazard: str, k_matrix: dict | None = None) -> float:
+    """k(s,t): sektör-tehlike katsayısını döner; yoksa 1.0 varsayılan."""
+    matrix = k_matrix or DEFAULT_K_MATRIX
+    k_key = _SECTOR_TO_K_KEY.get(sector.lower(), sector.upper())
+    row = matrix.get(k_key, {})
+    return row.get(hazard.lower(), 1.0)
+
+
+# ─────────────────────────────────────────────
 # SCORE RESULTS
 # ─────────────────────────────────────────────
 
@@ -43,6 +104,8 @@ class HFER720Result:
     hazard_breakdown: list[HazardBreakdown]
     radar: RadarData
     score_breakdown: dict   # full audit trail
+    hro_alpha: float = 0.8         # HRO olgunluk katsayısı
+    bottleneck_score: float = 1.0  # TOC darboğaz çarpanı
 
 
 # ─────────────────────────────────────────────
@@ -353,7 +416,13 @@ class HFER720Engine:
     Main classical risk model.
     Composes H, F, E, R into a Unified Risk Index (URI).
 
-    URI = 100 - [(H×wH + F×wF + E×wE) - (R×wR_adjusted)] / normalization
+    URI = (H × F × E × B) / (1 + k(s,t) × C²) × HRO_α
+    where:
+      B   = bottleneck_score (TOC darboğaz çarpanı, 1.0-3.0)
+      k   = sektör × tehlike katsayısı (k_matrix)
+      C   = normalised response deficit  (1 - r_score/100)
+      α   = HRO olgunluk katsayısı (0.5-1.5)
+    Result is re-scaled to 0-100, higher = safer.
     """
 
     def __init__(self):
@@ -369,6 +438,12 @@ class HFER720Engine:
         fragility: FragilityInput,
         exposure: ExposureInput,
         response: ResponseCapacityInput,
+        bottleneck_score: float = 1.0,
+        near_miss_count: int = 0,
+        tatbikat_var: bool = False,
+        otonom_squad: bool = False,
+        k_matrix: dict | None = None,
+        primary_hazard: str = "deprem",
     ) -> HFER720Result:
 
         sector_type = SectorType(sector) if sector in SectorType._value2member_map_ else SectorType.MUNICIPALITY
@@ -380,23 +455,37 @@ class HFER720Engine:
         e_score, e_breakdown = self.exposure_scorer.score(exposure)
         r_score, r_breakdown = self.response_scorer.score(response)
 
-        # URI formula:
-        # Risk dimensions (H, F, E) reduce safety, R increases it
-        # URI = 100 - weighted_risk + response_bonus
-        raw_risk = (
-            h_score * weights.w_hazard +
-            f_score * weights.w_fragility +
-            e_score * weights.w_exposure
-        )
+        # ── HRO alpha & k(s,t) ────────────────────────────────
+        hro_alpha = compute_hro_alpha(near_miss_count, tatbikat_var, otonom_squad)
+        k_val = get_k_value(sector, primary_hazard, k_matrix)
 
-        # Response capacity reduces risk (scaled to same dimension as risk)
-        response_credit = r_score * weights.w_response
+        # ── New URI formula ───────────────────────────────────
+        # C = response deficit (0 = perfect response, 1 = no response)
+        c_deficit = 1.0 - (r_score / 100.0)
 
-        uri_raw = 100 - raw_risk + (response_credit * 0.5)
+        # Raw risk numerator: product of risk dimensions × TOC bottleneck
+        # Dimensions normalised to 0-1 range for multiplication
+        h_n = h_score / 100.0
+        f_n = f_score / 100.0
+        e_n = e_score / 100.0
+        b_n = min(max(bottleneck_score, 1.0), 3.0)
+
+        raw_product = h_n * f_n * e_n * b_n  # 0-3 range
+
+        # k(s,t) × C² dampens risk when response is strong
+        denominator = 1.0 + k_val * (c_deficit ** 2)
+
+        adjusted_risk = raw_product / denominator  # still 0-3 range roughly
+
+        # Apply HRO alpha (>1 = safer, <1 = riskier)
+        adjusted_risk = adjusted_risk / hro_alpha
+
+        # Re-scale to URI 0-100 (higher = safer):
+        # max theoretical adjusted_risk ≈ 3/(1*0.8) ≈ 3.75 → cap at 4 for normalisation
+        uri_raw = 100.0 * (1.0 - min(adjusted_risk / 4.0, 1.0))
         uri_score = round(min(max(uri_raw, 0), 100), 2)
 
         risk_class = classify_risk(uri_score)
-        next_review = RISK_REVIEW_DAYS[risk_class]
 
         radar = RadarData(
             hazard=round(h_score, 1),
@@ -407,15 +496,21 @@ class HFER720Engine:
 
         score_breakdown = {
             "sector": sector,
+            "formula": "URI = (H×F×E×B) / (1 + k(s,t)×C²) × HRO_α",
             "weights": {
                 "w_hazard": weights.w_hazard,
                 "w_fragility": weights.w_fragility,
                 "w_exposure": weights.w_exposure,
                 "w_response": weights.w_response,
             },
-            "raw_risk": round(raw_risk, 4),
-            "response_credit": round(response_credit, 4),
-            "hazard_detail": f_breakdown,
+            "hro_alpha": hro_alpha,
+            "bottleneck_score": b_n,
+            "k_value": k_val,
+            "primary_hazard": primary_hazard,
+            "c_deficit": round(c_deficit, 4),
+            "raw_product": round(raw_product, 6),
+            "adjusted_risk": round(adjusted_risk, 6),
+            "hazard_detail": hazard_breakdown,
             "fragility_detail": f_breakdown,
             "exposure_detail": e_breakdown,
             "response_detail": r_breakdown,
@@ -432,4 +527,6 @@ class HFER720Engine:
             hazard_breakdown=hazard_breakdown,
             radar=radar,
             score_breakdown=score_breakdown,
+            hro_alpha=hro_alpha,
+            bottleneck_score=b_n,
         )
